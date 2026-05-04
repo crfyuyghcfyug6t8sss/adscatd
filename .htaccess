@@ -1,0 +1,12 @@
+DirectoryIndex index.php
+Options -Indexes
+
+<FilesMatch "\.(db|sqlite|sqlite3)$">
+  Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^data/ - [F,L]
+  RewriteRule ^includes/ - [F,L]
+</IfModule>
