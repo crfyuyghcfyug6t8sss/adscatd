@@ -10,6 +10,8 @@ $pendingCharges = (int)$pdo->query('SELECT COUNT(*) c FROM charge_requests WHERE
 $activeCards = (int)$pdo->query('SELECT COUNT(*) c FROM cards WHERE status="active"')->fetch()['c'];
 $frozenCards = (int)$pdo->query('SELECT COUNT(*) c FROM cards WHERE status="frozen"')->fetch()['c'];
 $totalBal    = (float)$pdo->query('SELECT COALESCE(SUM(balance),0) s FROM cards')->fetch()['s'];
+$totalWallets = (float)$pdo->query('SELECT COALESCE(SUM(wallet_balance),0) s FROM users WHERE is_admin=0')->fetch()['s'];
+$pendingDeposits = (int)$pdo->query('SELECT COUNT(*) c FROM wallet_deposits WHERE status="pending"')->fetch()['c'];
 
 $lastApps = $pdo->query("SELECT a.*, u.phone FROM applications a JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 6")->fetchAll();
 $lastCharges = $pdo->query("SELECT cr.*, u.phone FROM charge_requests cr JOIN users u ON u.id=cr.user_id ORDER BY cr.id DESC LIMIT 6")->fetchAll();
@@ -22,6 +24,8 @@ $lastCharges = $pdo->query("SELECT cr.*, u.phone FROM charge_requests cr JOIN us
   <div class="stat"><i data-lucide="wallet" class="ic"></i><div><span><?= e(money($totalBal,$cur)) ?></span><small>إجمالي الأرصدة</small></div></div>
   <div class="stat"><i data-lucide="hourglass" class="ic"></i><div><span><?= $pendingApps ?></span><small>طلبات إصدار معلقة</small></div></div>
   <div class="stat"><i data-lucide="refresh-cw" class="ic"></i><div><span><?= $pendingCharges ?></span><small>طلبات شحن معلقة</small></div></div>
+  <div class="stat"><i data-lucide="wallet" class="ic"></i><div><span><?= $pendingDeposits ?></span><small>إيداعات محفظة معلقة</small></div></div>
+  <div class="stat"><i data-lucide="banknote" class="ic"></i><div><span><?= e(money($totalWallets,$cur)) ?></span><small>مجموع المحافظ</small></div></div>
 </div>
 
 <div class="two-col">

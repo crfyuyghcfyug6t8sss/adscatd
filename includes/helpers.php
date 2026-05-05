@@ -57,3 +57,38 @@ function txn(PDO $pdo, int $userId, ?int $cardId, string $type, float $amount, s
     $st = $pdo->prepare('INSERT INTO transactions (user_id, card_id, type, amount, note) VALUES (?,?,?,?,?)');
     $st->execute([$userId, $cardId, $type, $amount, $note]);
 }
+
+function wallet_balance(PDO $pdo, int $userId): float {
+    $st = $pdo->prepare('SELECT wallet_balance FROM users WHERE id = ?');
+    $st->execute([$userId]);
+    $r = $st->fetch();
+    return (float)($r['wallet_balance'] ?? 0);
+}
+function wallet_add(PDO $pdo, int $userId, float $amount, string $note = ''): void {
+    $pdo->prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?')->execute([$amount, $userId]);
+    txn($pdo, $userId, null, 'wallet_add', $amount, $note);
+}
+function wallet_deduct(PDO $pdo, int $userId, float $amount, string $note = ''): bool {
+    $st = $pdo->prepare('UPDATE users SET wallet_balance = wallet_balance - ? WHERE id = ? AND wallet_balance >= ?');
+    $st->execute([$amount, $userId, $amount]);
+    if ($st->rowCount() < 1) return false;
+    txn($pdo, $userId, null, 'wallet_deduct', -$amount, $note);
+    return true;
+}
+
+function card_brand_label(string $brand): string {
+    return $brand === 'mastercard' ? 'Mastercard' : 'Visa';
+}
+function gen_card_number_for(string $brand): string {
+    if ($brand === 'mastercard') {
+        $num = (string)random_int(51, 55);
+        for ($i = 0; $i < 14; $i++) $num .= random_int(0, 9);
+        return $num;
+    }
+    return gen_card_number();
+}
+function approved_charge_count(PDO $pdo, int $cardId): int {
+    $st = $pdo->prepare('SELECT COUNT(*) c FROM charge_requests WHERE card_id = ? AND status = "approved"');
+    $st->execute([$cardId]);
+    return (int)$st->fetch()['c'];
+}

@@ -5,7 +5,7 @@ require __DIR__ . '/_layout.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
-    $keys = ['site_name','hero_title','hero_subtitle','hero_pitch','currency','issuance_fee','charge_fee_percent','min_initial_charge','min_deposit'];
+    $keys = ['site_name','hero_title','hero_subtitle','hero_pitch','currency','issuance_fee','charge_fee_percent','min_initial_charge','min_wallet_deposit'];
     foreach ($keys as $k) {
         if (isset($_POST[$k])) setting_set($pdo, $k, $_POST[$k]);
     }
@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <label><span>رسوم إصدار البطاقة</span><input type="number" step="0.01" name="issuance_fee" value="<?= e(setting_get($pdo,'issuance_fee')) ?>"></label>
       <label><span>نسبة رسوم الشحن (%)</span><input type="number" step="0.01" name="charge_fee_percent" value="<?= e(setting_get($pdo,'charge_fee_percent')) ?>"></label>
       <label><span>الحد الأدنى للشحن المبدئي</span><input type="number" step="0.01" name="min_initial_charge" value="<?= e(setting_get($pdo,'min_initial_charge')) ?>"></label>
-      <label><span>الحد الأدنى للإيداع</span><input type="number" step="0.01" name="min_deposit" value="<?= e(setting_get($pdo,'min_deposit')) ?>"></label>
+      <label><span>الحد الأدنى لإيداع المحفظة</span><input type="number" step="0.01" name="min_wallet_deposit" value="<?= e(setting_get($pdo,'min_wallet_deposit')) ?>"></label>
     </div>
   </div>
   <button class="btn btn-primary lg"><i data-lucide="save"></i> حفظ الإعدادات</button>

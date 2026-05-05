@@ -11,16 +11,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $st = $pdo->prepare('SELECT * FROM charge_requests WHERE id=?');
     $st->execute([$id]);
     $cr = $st->fetch();
-    if ($cr) {
+    if ($cr && $cr['status'] === 'pending') {
         if ($action === 'approve') {
             $pdo->prepare('UPDATE cards SET balance = balance + ? WHERE id=?')->execute([$cr['amount'], $cr['card_id']]);
             $pdo->prepare('UPDATE charge_requests SET status="approved" WHERE id=?')->execute([$id]);
             txn($pdo, $cr['user_id'], $cr['card_id'], 'charge', $cr['amount'], 'تمت الموافقة على شحن البطاقة');
-            notify($pdo, $cr['user_id'], $cr['card_id'], 'تمت الموافقة على شحن بطاقتك', 'تم إضافة '.money($cr['amount'],$cur).' إلى رصيدك.', 'info');
+            notify($pdo, $cr['user_id'], $cr['card_id'], 'تمت الموافقة على شحن بطاقتك', 'تم إضافة '.money($cr['amount'],$cur).' إلى رصيد بطاقتك.', 'info');
         } elseif ($action === 'reject') {
             $note = trim($_POST['note'] ?? '');
             $pdo->prepare('UPDATE charge_requests SET status="rejected", admin_note=? WHERE id=?')->execute([$note,$id]);
-            notify($pdo, $cr['user_id'], $cr['card_id'], 'رفض طلب شحن البطاقة', $note ?: 'تم رفض طلب الشحن.', 'info');
+            $refund = (float)($cr['total_paid'] ?: ($cr['amount'] + $cr['fee']));
+            wallet_add($pdo, (int)$cr['user_id'], $refund, 'استرداد طلب شحن #' . $id . ' (مرفوض)');
+            notify($pdo, $cr['user_id'], $cr['card_id'], 'رفض طلب شحن البطاقة', ($note ?: 'تم رفض طلب الشحن.') . ' تم استرداد ' . money($refund, $cur) . ' إلى محفظتك.', 'info');
         }
     }
     redirect('/admin/charges.php');
@@ -41,7 +43,7 @@ $rows = $pdo->query("SELECT cr.*, u.phone, c.card_number FROM charge_requests cr
 </div>
 <?php if(!$rows): ?><p class="empty">لا يوجد.</p><?php else: ?>
 <table class="table">
-<thead><tr><th>#</th><th>المستخدم</th><th>البطاقة</th><th>المبلغ</th><th>الرسوم</th><th>المرجع</th><th>الحالة</th><th></th></tr></thead>
+<thead><tr><th>#</th><th>المستخدم</th><th>البطاقة</th><th>المبلغ</th><th>العمولة</th><th>المخصوم من المحفظة</th><th>الحالة</th><th></th></tr></thead>
 <tbody>
 <?php foreach($rows as $r): [$lbl,$cls]=status_label($r['status']); ?>
 <tr>
@@ -50,7 +52,7 @@ $rows = $pdo->query("SELECT cr.*, u.phone, c.card_number FROM charge_requests cr
   <td dir="ltr"><?= e(mask_card($r['card_number'])) ?></td>
   <td><?= e(money($r['amount'],$cur)) ?></td>
   <td><?= e(money($r['fee'],$cur)) ?></td>
-  <td dir="ltr"><?= e($r['payment_reference'] ?: '—') ?></td>
+  <td><?= e(money($r['total_paid'] ?: ($r['amount']+$r['fee']), $cur)) ?></td>
   <td><span class="badge <?= e($cls) ?>"><?= e($lbl) ?></span></td>
   <td>
     <?php if ($r['status']==='pending'): ?>

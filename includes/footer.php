@@ -3,10 +3,10 @@
   <div class="container foot-grid">
     <div>
       <div class="brand small">
-        <span class="brand-mark"><i data-lucide="globe-2"></i></span>
-        <span class="brand-text"><span class="brand-name">rozana<span> agency</span></span></span>
+        <span class="brand-mark"><i data-lucide="credit-card"></i></span>
+        <span class="brand-text"><span class="brand-name">my-ads<span>.cards</span></span></span>
       </div>
-      <p class="muted">الوكالة الأولى المتخصصة بإصدار بطاقات فيزا للإعلانات الممولة والمدفوعات الرقمية.</p>
+      <p class="muted">الوكالة الأولى المتخصصة بإصدار بطاقات Visa و Mastercard للإعلانات الممولة والمدفوعات الرقمية.</p>
     </div>
     <div>
       <h4>روابط</h4>
@@ -26,13 +26,13 @@
     </div>
   </div>
   <div class="container foot-bottom">
-    <span>© <?= date('Y') ?> rozana agency</span>
+    <span>© <?= date('Y') ?> my-ads.cards</span>
     <span class="muted">All rights reserved</span>
   </div>
 </footer>
 <script>
   document.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });
 </script>
-<script src="/assets/js/app.js?v=4" defer></script>
+<script src="/assets/js/app.js?v=8" defer></script>
 </body>
 </html>

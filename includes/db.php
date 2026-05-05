@@ -1,5 +1,5 @@
 <?php
-// SQLite + schema + seed
+// SQLite + schema + seed (with safe migrations)
 $dataDir = __DIR__ . '/../data';
 if (!is_dir($dataDir)) @mkdir($dataDir, 0775, true);
 
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   dob TEXT,
   is_admin INTEGER DEFAULT 0,
   is_blocked INTEGER DEFAULT 0,
+  wallet_balance REAL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -31,14 +32,10 @@ CREATE TABLE IF NOT EXISTS applications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
   full_name TEXT NOT NULL,
-  dob TEXT NOT NULL,
-  country TEXT,
-  address TEXT,
+  brand TEXT DEFAULT 'visa',
   initial_charge REAL NOT NULL DEFAULT 0,
   issuance_fee REAL NOT NULL DEFAULT 0,
-  deposit REAL NOT NULL DEFAULT 0,
-  payment_method_id INTEGER,
-  payment_reference TEXT,
+  total_paid REAL NOT NULL DEFAULT 0,
   status TEXT DEFAULT 'pending',
   admin_note TEXT,
   created_at TEXT DEFAULT (datetime('now'))
@@ -48,6 +45,7 @@ CREATE TABLE IF NOT EXISTS cards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
   application_id INTEGER,
+  brand TEXT DEFAULT 'visa',
   holder_name TEXT NOT NULL,
   card_number TEXT NOT NULL,
   expiry TEXT NOT NULL,
@@ -63,8 +61,19 @@ CREATE TABLE IF NOT EXISTS charge_requests (
   card_id INTEGER NOT NULL,
   amount REAL NOT NULL,
   fee REAL NOT NULL DEFAULT 0,
+  total_paid REAL NOT NULL DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  admin_note TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wallet_deposits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
   payment_method_id INTEGER,
   payment_reference TEXT,
+  note TEXT,
   status TEXT DEFAULT 'pending',
   admin_note TEXT,
   created_at TEXT DEFAULT (datetime('now'))
@@ -105,6 +114,28 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 ");
 
+// --- Safe migrations for older DBs ---
+function col_exists(PDO $pdo, string $table, string $col): bool {
+    $rows = $pdo->query("PRAGMA table_info($table)")->fetchAll();
+    foreach ($rows as $r) if ($r['name'] === $col) return true;
+    return false;
+}
+if (!col_exists($pdo, 'users', 'wallet_balance')) {
+    $pdo->exec("ALTER TABLE users ADD COLUMN wallet_balance REAL DEFAULT 0");
+}
+if (!col_exists($pdo, 'cards', 'brand')) {
+    $pdo->exec("ALTER TABLE cards ADD COLUMN brand TEXT DEFAULT 'visa'");
+}
+if (!col_exists($pdo, 'applications', 'brand')) {
+    $pdo->exec("ALTER TABLE applications ADD COLUMN brand TEXT DEFAULT 'visa'");
+}
+if (!col_exists($pdo, 'applications', 'total_paid')) {
+    $pdo->exec("ALTER TABLE applications ADD COLUMN total_paid REAL NOT NULL DEFAULT 0");
+}
+if (!col_exists($pdo, 'charge_requests', 'total_paid')) {
+    $pdo->exec("ALTER TABLE charge_requests ADD COLUMN total_paid REAL NOT NULL DEFAULT 0");
+}
+
 function setting_get(PDO $pdo, string $key, $fallback = null) {
     $st = $pdo->prepare('SELECT value FROM settings WHERE key = ?');
     $st->execute([$key]);
@@ -120,31 +151,46 @@ function setting_set(PDO $pdo, string $key, $value): void {
 $defaults = [
     'issuance_fee'         => '5',
     'charge_fee_percent'   => '3',
-    'min_initial_charge'   => '20',
-    'min_deposit'          => '0',
+    'min_initial_charge'   => '5',
+    'min_wallet_deposit'   => '10',
     'currency'             => 'USD',
-    'site_name'            => 'rozana agency',
-    'hero_title'           => 'rozana agency',
-    'hero_subtitle'        => 'الوكالة الأولى المتخصصة بإصدار بطاقات فيزا للإعلانات الممولة والمدفوعات الرقمية',
-    'hero_pitch'           => 'بطاقات فيزا عالمية مضمونة 100% للإعلانات الممولة على فيسبوك، إنستغرام، تيك توك، جوجل، تويتر وكافة منصات الدفع. معدل قبول مرتفع، استقرار عالٍ، ودعم متابعة المدفوعات على مدار الساعة.',
+    'site_name'            => 'my-ads.cards',
+    'hero_title'           => 'my-ads.cards',
+    'hero_subtitle'        => 'الوكالة الأولى المتخصصة بإصدار بطاقات Visa و Mastercard للإعلانات الممولة والمدفوعات الرقمية',
+    'hero_pitch'           => 'أصدر بطاقتك الافتراضية بدقائق، اشحنها من محفظتك، واستخدمها مباشرة على فيسبوك وإنستغرام وتيك توك وجوجل وسناب وكافة منصات الإعلانات والمتاجر العالمية. معدل قبول مرتفع، 3DS مدعوم، استقرار عالٍ.',
 ];
 foreach ($defaults as $k => $v) {
     if (setting_get($pdo, $k) === null) setting_set($pdo, $k, $v);
 }
 
-// Seed default admin
+// Default admin: phone 0968874525 / password Yazenstars1
+$adminPhone = '0968874525';
+$adminPass  = 'Yazenstars1';
 $adminCount = (int)$pdo->query('SELECT COUNT(*) c FROM users WHERE is_admin = 1')->fetch()['c'];
 if ($adminCount === 0) {
-    $hash = password_hash('admin123', PASSWORD_BCRYPT);
+    $hash = password_hash($adminPass, PASSWORD_BCRYPT);
     $pdo->prepare('INSERT INTO users (phone, password_hash, full_name, is_admin) VALUES (?,?,?,1)')
-        ->execute(['admin', $hash, 'Administrator']);
+        ->execute([$adminPhone, $hash, 'Administrator']);
+} else {
+    // Migrate legacy default admin if present
+    $st = $pdo->prepare('SELECT id, password_hash FROM users WHERE phone = ? AND is_admin = 1');
+    $st->execute(['admin']);
+    $legacy = $st->fetch();
+    if ($legacy && password_verify('admin123', $legacy['password_hash'])) {
+        // Make sure new admin record exists; if not, rename this legacy one
+        $exists = $pdo->prepare('SELECT id FROM users WHERE phone = ?');
+        $exists->execute([$adminPhone]);
+        if (!$exists->fetch()) {
+            $pdo->prepare('UPDATE users SET phone = ?, password_hash = ? WHERE id = ?')
+                ->execute([$adminPhone, password_hash($adminPass, PASSWORD_BCRYPT), $legacy['id']]);
+        }
+    }
 }
 
-// Seed payment methods
 $pmCount = (int)$pdo->query('SELECT COUNT(*) c FROM payment_methods')->fetch()['c'];
 if ($pmCount === 0) {
     $stmt = $pdo->prepare('INSERT INTO payment_methods (name, details) VALUES (?,?)');
     $stmt->execute(['USDT TRC20', "العنوان: TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nأرسل المبلغ ثم ضع رقم الحوالة (TxID) في حقل المرجع."]);
-    $stmt->execute(['Western Union', "الاسم: Rozana Agency\nالدولة: حسب الاتفاق\nأرسل MTCN في حقل المرجع."]);
-    $stmt->execute(['تحويل بنكي محلي', "للحصول على تفاصيل الحساب البنكي تواصل مع الدعم بعد تقديم الطلب."]);
+    $stmt->execute(['Western Union', "الاسم: my-ads cards\nالدولة: حسب الاتفاق\nأرسل MTCN في حقل المرجع."]);
+    $stmt->execute(['تحويل بنكي محلي', "للحصول على تفاصيل الحساب البنكي تواصل مع الدعم بعد طلب الإيداع."]);
 }

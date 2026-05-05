@@ -7,21 +7,24 @@ $cards = $pdo->prepare('SELECT * FROM cards WHERE user_id=? ORDER BY id DESC');
 $cards->execute([$me['id']]);
 $cards = $cards->fetchAll();
 
-$pageTitle = 'بطاقاتي — rozana agency';
+$pageTitle = 'بطاقاتي — my-ads.cards';
 $navActive = 'cards';
 include __DIR__ . '/includes/header.php';
 ?>
-<section class="page-head">
+<section class="page-head reveal">
   <h1><i data-lucide="credit-card"></i> بطاقاتي</h1>
-  <a href="/apply.php" class="btn btn-primary"><i data-lucide="plus"></i> طلب بطاقة جديدة</a>
+  <a href="/apply.php" class="btn btn-primary pulse-cta"><i data-lucide="plus"></i> طلب بطاقة جديدة</a>
 </section>
 
 <?php if (!$cards): ?>
-  <div class="empty-card">
+  <div class="empty-card reveal-up">
     <i data-lucide="credit-card" class="ic-xl"></i>
     <h3>لا توجد بطاقات بعد</h3>
-    <p class="muted">قدّم طلبك الآن وستظهر بطاقتك هنا بعد موافقة الإدارة.</p>
-    <a class="btn btn-primary" href="/apply.php"><i data-lucide="plus"></i> طلب بطاقة</a>
+    <p class="muted">اشحن محفظتك ثم اطلب بطاقتك الأولى. ستظهر هنا بعد موافقة الإدارة.</p>
+    <div class="row-gap" style="justify-content:center; margin-top: 12px;">
+      <a class="btn btn-outline" href="/wallet.php"><i data-lucide="wallet"></i> شحن المحفظة</a>
+      <a class="btn btn-primary" href="/apply.php"><i data-lucide="plus"></i> طلب بطاقة</a>
+    </div>
   </div>
 <?php else: ?>
   <div class="cards-grid">
@@ -30,12 +33,17 @@ include __DIR__ . '/includes/header.php';
       $sNotifs->execute([$me['id'], $c['id']]);
       $cardNotifs = $sNotifs->fetchAll();
       [$lbl,$cls] = status_label($c['status']);
+      $brand = $c['brand'] ?? 'visa';
     ?>
-      <article class="card-block">
-        <div class="visa-card <?= $c['status']==='frozen' ? 'frozen' : '' ?>">
+      <article class="card-block reveal-up">
+        <div class="visa-card brand-<?= e($brand==='mastercard'?'mc':'visa') ?> <?= $c['status']==='frozen' ? 'frozen' : '' ?>">
           <div class="vc-row vc-top">
-            <span class="vc-bank">rozana agency</span>
-            <span class="vc-brand">VISA</span>
+            <span class="vc-bank">my-ads.cards</span>
+            <?php if ($brand==='mastercard'): ?>
+              <span class="vc-mc"><span class="mc-c c-r"></span><span class="mc-c c-y"></span></span>
+            <?php else: ?>
+              <span class="vc-brand">VISA</span>
+            <?php endif; ?>
           </div>
           <div class="vc-chip"><i data-lucide="cpu"></i></div>
           <div class="vc-number" data-full="<?= e(format_card($c['card_number'])) ?>" data-mask="<?= e(mask_card($c['card_number'])) ?>"><?= e(format_card($c['card_number'])) ?></div>
@@ -65,6 +73,10 @@ include __DIR__ . '/includes/header.php';
           <div class="card-meta-row">
             <span class="muted"><i data-lucide="activity"></i> الحالة</span>
             <span class="badge <?= e($cls) ?>"><?= e($lbl) ?></span>
+          </div>
+          <div class="card-meta-row">
+            <span class="muted"><i data-lucide="layers"></i> النوع</span>
+            <strong><?= e(card_brand_label($brand)) ?></strong>
           </div>
           <div class="card-actions">
             <a href="/charge.php?card_id=<?= (int)$c['id'] ?>" class="btn btn-primary"><i data-lucide="refresh-cw"></i> شحن البطاقة</a>

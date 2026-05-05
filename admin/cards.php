@@ -40,8 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $cvv = preg_replace('/\D/','', $_POST['cvv'] ?? $card['cvv']);
             $holder = trim($_POST['holder_name'] ?? $card['holder_name']);
             $bal = (float)($_POST['balance'] ?? $card['balance']);
-            $pdo->prepare('UPDATE cards SET holder_name=?, card_number=?, expiry=?, cvv=?, balance=? WHERE id=?')
-                ->execute([$holder,$num,$exp,$cvv,$bal,$id]);
+            $brand = ($_POST['brand'] ?? $card['brand']) === 'mastercard' ? 'mastercard' : 'visa';
+            $pdo->prepare('UPDATE cards SET holder_name=?, card_number=?, expiry=?, cvv=?, balance=?, brand=? WHERE id=?')
+                ->execute([$holder,$num,$exp,$cvv,$bal,$brand,$id]);
         } elseif ($action === 'delete') {
             $pdo->prepare('DELETE FROM cards WHERE id=?')->execute([$id]);
         }
@@ -54,12 +55,13 @@ $rows = $pdo->query("SELECT c.*, u.phone FROM cards c JOIN users u ON u.id=c.use
 <h1><i data-lucide="credit-card"></i> البطاقات</h1>
 <?php if(!$rows): ?><p class="empty">لا توجد بطاقات.</p><?php else: ?>
 <table class="table">
-<thead><tr><th>#</th><th>المستخدم</th><th>الحامل</th><th>الرقم</th><th>الانتهاء</th><th>CVV</th><th>الرصيد</th><th>الحالة</th><th></th></tr></thead>
+<thead><tr><th>#</th><th>المستخدم</th><th>النوع</th><th>الحامل</th><th>الرقم</th><th>الانتهاء</th><th>CVV</th><th>الرصيد</th><th>الحالة</th><th></th></tr></thead>
 <tbody>
 <?php foreach($rows as $c): [$lbl,$cls]=status_label($c['status']); ?>
   <tr>
     <td>#<?= (int)$c['id'] ?></td>
     <td dir="ltr"><?= e($c['phone']) ?></td>
+    <td><span class="badge <?= ($c['brand']??'')==='mastercard'?'warn':'pending' ?>"><?= e(card_brand_label($c['brand'] ?? 'visa')) ?></span></td>
     <td><?= e($c['holder_name']) ?></td>
     <td dir="ltr"><?= e(format_card($c['card_number'])) ?></td>
     <td dir="ltr"><?= e($c['expiry']) ?></td>
@@ -99,6 +101,12 @@ $rows = $pdo->query("SELECT c.*, u.phone FROM cards c JOIN users u ON u.id=c.use
               <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
               <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
               <input type="hidden" name="action" value="edit">
+              <label><span>النوع</span>
+                <select name="brand">
+                  <option value="visa" <?= ($c['brand']??'visa')==='visa'?'selected':'' ?>>Visa</option>
+                  <option value="mastercard" <?= ($c['brand']??'')==='mastercard'?'selected':'' ?>>Mastercard</option>
+                </select>
+              </label>
               <label><span>الحامل</span><input name="holder_name" value="<?= e($c['holder_name']) ?>"></label>
               <label><span>الرقم</span><input name="card_number" dir="ltr" value="<?= e($c['card_number']) ?>"></label>
               <label><span>الانتهاء</span><input name="expiry" dir="ltr" value="<?= e($c['expiry']) ?>"></label>
