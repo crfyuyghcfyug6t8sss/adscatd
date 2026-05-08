@@ -135,6 +135,15 @@ if (!col_exists($pdo, 'applications', 'total_paid')) {
 if (!col_exists($pdo, 'charge_requests', 'total_paid')) {
     $pdo->exec("ALTER TABLE charge_requests ADD COLUMN total_paid REAL NOT NULL DEFAULT 0");
 }
+if (!col_exists($pdo, 'cards', 'fc_id')) {
+    $pdo->exec("ALTER TABLE cards ADD COLUMN fc_id TEXT");
+}
+if (!col_exists($pdo, 'cards', 'fc_data')) {
+    $pdo->exec("ALTER TABLE cards ADD COLUMN fc_data TEXT");
+}
+if (!col_exists($pdo, 'cards', 'fc_synced_at')) {
+    $pdo->exec("ALTER TABLE cards ADD COLUMN fc_synced_at TEXT");
+}
 
 function setting_get(PDO $pdo, string $key, $fallback = null) {
     $st = $pdo->prepare('SELECT value FROM settings WHERE key = ?');
@@ -158,6 +167,16 @@ $defaults = [
     'hero_title'           => 'my-ads.cards',
     'hero_subtitle'        => 'الوكالة الأولى المتخصصة بإصدار بطاقات Visa و Mastercard للإعلانات الممولة والمدفوعات الرقمية',
     'hero_pitch'           => 'أصدر بطاقتك الافتراضية بدقائق، اشحنها من محفظتك، واستخدمها مباشرة على فيسبوك وإنستغرام وتيك توك وجوجل وسناب وكافة منصات الإعلانات والمتاجر العالمية. معدل قبول مرتفع، 3DS مدعوم، استقرار عالٍ.',
+
+    // FlexCard integration
+    'flexcard_enabled'     => '1',
+    'flexcard_base_url'    => 'https://flexcard.cards/api/v1',
+    'flexcard_api_key'     => 'hN1ONAOu.0nuTduWPu6LuvDycWgp8KEfynLnH9AbE',
+    'flexcard_auth_header' => 'Authorization',
+    'flexcard_auth_prefix' => 'Api-Key',
+    'flexcard_visa_service'=> '',
+    'flexcard_mc_service'  => '',
+    'flexcard_otp_last_id' => '0',
 ];
 foreach ($defaults as $k => $v) {
     if (setting_get($pdo, $k) === null) setting_set($pdo, $k, $v);

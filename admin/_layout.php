@@ -18,6 +18,7 @@ include __DIR__ . '/../includes/header.php';
     <a href="/admin/users.php" class="<?= $adminActive==='users'?'active':'' ?>"><i data-lucide="users"></i> المستخدمون</a>
     <a href="/admin/payment_methods.php" class="<?= $adminActive==='pm'?'active':'' ?>"><i data-lucide="banknote"></i> طرق الدفع</a>
     <a href="/admin/notifications.php" class="<?= $adminActive==='notif'?'active':'' ?>"><i data-lucide="bell"></i> الإشعارات و OTP</a>
+    <a href="/admin/flexcard.php" class="<?= $adminActive==='flexcard'?'active':'' ?>"><i data-lucide="zap"></i> FlexCard</a>
     <a href="/admin/settings.php" class="<?= $adminActive==='settings'?'active':'' ?>"><i data-lucide="settings"></i> الإعدادات</a>
   </nav>
 </aside>

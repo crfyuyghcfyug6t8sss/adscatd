@@ -8,16 +8,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $id = (int)($_POST['id'] ?? 0);
     $action = $_POST['action'] ?? '';
+    if ($action === 'fc_sync_otp_all') {
+        $r = fc_sync_otps($pdo);
+        if ($r['ok']) flash_set('ok', 'تم استيراد ' . $r['inserted'] . ' OTP جديد.');
+        else flash_set('bad', 'فشلت مزامنة OTP: ' . ($r['error'] ?? '—'));
+        redirect('/admin/cards.php');
+    }
     $st = $pdo->prepare('SELECT * FROM cards WHERE id=?');
     $st->execute([$id]);
     $card = $st->fetch();
     if ($card) {
         if ($action === 'freeze') {
             $pdo->prepare('UPDATE cards SET status="frozen" WHERE id=?')->execute([$id]);
+            if (!empty($card['fc_id']) && fc_enabled($pdo)) {
+                fc_update_card_remote($pdo, $card['fc_id'], ['status' => 'frozen']);
+            }
             notify($pdo, $card['user_id'], $id, 'تم تجميد البطاقة', 'تم تجميد بطاقتك من قبل الإدارة.', 'info');
         } elseif ($action === 'unfreeze') {
             $pdo->prepare('UPDATE cards SET status="active" WHERE id=?')->execute([$id]);
+            if (!empty($card['fc_id']) && fc_enabled($pdo)) {
+                fc_update_card_remote($pdo, $card['fc_id'], ['status' => 'active']);
+            }
             notify($pdo, $card['user_id'], $id, 'تم إلغاء تجميد البطاقة', 'تم تفعيل بطاقتك من جديد.', 'info');
+        } elseif ($action === 'sync_fc') {
+            if (!empty($card['fc_id']) && fc_enabled($pdo)) {
+                $r = fc_get_card_sensitive($pdo, $card['fc_id']);
+                if ($r['ok'] && is_array($r['body'])) {
+                    $pdo->prepare('UPDATE cards SET fc_data=?, fc_synced_at=datetime("now") WHERE id=?')
+                        ->execute([json_encode($r['body'], JSON_UNESCAPED_UNICODE), $id]);
+                    flash_set('ok','تمت مزامنة البطاقة من FlexCard.');
+                } else {
+                    flash_set('bad','فشلت المزامنة (HTTP ' . $r['status'] . ').');
+                }
+            }
+        } elseif ($action === 'fc_sync_otp_all') {
+            $r = fc_sync_otps($pdo);
+            if ($r['ok']) flash_set('ok', 'تم استيراد ' . $r['inserted'] . ' OTP جديد.');
+            else flash_set('bad', 'فشلت مزامنة OTP: ' . ($r['error'] ?? '—'));
         } elseif ($action === 'add') {
             $amt = (float)($_POST['amount'] ?? 0);
             $note= trim($_POST['note'] ?? 'إضافة رصيد من الإدارة');
@@ -53,13 +80,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $rows = $pdo->query("SELECT c.*, u.phone FROM cards c JOIN users u ON u.id=c.user_id ORDER BY c.id DESC")->fetchAll();
 ?>
 <h1><i data-lucide="credit-card"></i> البطاقات</h1>
+<?php if (fc_enabled($pdo)): ?>
+<div class="row-gap" style="margin-bottom:10px;">
+  <form method="post" class="inline">
+    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+    <input type="hidden" name="id" value="0">
+    <button name="action" value="fc_sync_otp_all" class="btn btn-primary sm"><i data-lucide="key-round"></i> مزامنة OTPs من FlexCard</button>
+  </form>
+  <a href="/admin/flexcard.php" class="btn btn-outline sm"><i data-lucide="zap"></i> صفحة FlexCard</a>
+</div>
+<?php endif; ?>
 <?php if(!$rows): ?><p class="empty">لا توجد بطاقات.</p><?php else: ?>
 <table class="table">
 <thead><tr><th>#</th><th>المستخدم</th><th>النوع</th><th>الحامل</th><th>الرقم</th><th>الانتهاء</th><th>CVV</th><th>الرصيد</th><th>الحالة</th><th></th></tr></thead>
 <tbody>
 <?php foreach($rows as $c): [$lbl,$cls]=status_label($c['status']); ?>
   <tr>
-    <td>#<?= (int)$c['id'] ?></td>
+    <td>#<?= (int)$c['id'] ?> <?= !empty($c['fc_id']) ? '<span class="badge ok" title="FlexCard">FC</span>' : '' ?></td>
     <td dir="ltr"><?= e($c['phone']) ?></td>
     <td><span class="badge <?= ($c['brand']??'')==='mastercard'?'warn':'pending' ?>"><?= e(card_brand_label($c['brand'] ?? 'visa')) ?></span></td>
     <td><?= e($c['holder_name']) ?></td>
@@ -115,6 +152,13 @@ $rows = $pdo->query("SELECT c.*, u.phone FROM cards c JOIN users u ON u.id=c.use
               <button class="btn btn-primary sm"><i data-lucide="save"></i> حفظ</button>
             </form>
           </details>
+          <?php if (!empty($c['fc_id']) && fc_enabled($pdo)): ?>
+          <form method="post" class="inline">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
+            <button name="action" value="sync_fc" class="btn btn-ghost sm"><i data-lucide="refresh-cw"></i> مزامنة من FlexCard</button>
+          </form>
+          <?php endif; ?>
           <form method="post" class="inline" onsubmit="return confirm('حذف البطاقة؟');">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="id" value="<?= (int)$c['id'] ?>">
