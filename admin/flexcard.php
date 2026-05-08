@@ -19,10 +19,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'auto_detect') {
         $result = ['detect' => fc_auto_detect($pdo)];
     } elseif ($action === 'apply_auth') {
-        setting_set($pdo, 'flexcard_auth_header', (string)$_POST['header']);
-        setting_set($pdo, 'flexcard_auth_prefix', (string)$_POST['prefix']);
+        setting_set($pdo, 'flexcard_auth_mode',   (string)($_POST['mode']   ?? 'header'));
+        setting_set($pdo, 'flexcard_auth_header', (string)($_POST['key1']   ?? 'Authorization'));
+        setting_set($pdo, 'flexcard_auth_prefix', (string)($_POST['key2']   ?? ''));
         flash_set('ok', 'تم تطبيق صيغة المصادقة.');
         redirect('/admin/flexcard.php');
+    } elseif ($action === 'custom_test') {
+        $mode = (string)($_POST['mode'] ?? 'header');
+        $k1   = (string)($_POST['key1'] ?? '');
+        $k2   = (string)($_POST['key2'] ?? '');
+        $path = (string)($_POST['path'] ?? '/cards/cards/?limit=1');
+        $r = fc_attempt($pdo, $mode, $k1, $k2, $path);
+        $result = ['custom' => $r, 'used' => ['mode'=>$mode,'k1'=>$k1,'k2'=>$k2,'path'=>$path]];
     } elseif ($action === 'pick_visa') {
         setting_set($pdo, 'flexcard_visa_service', (string)($_POST['service_id'] ?? ''));
         flash_set('ok', 'تم ضبط خدمة Visa.');
@@ -138,14 +146,13 @@ $mcSvc   = setting_get($pdo, 'flexcard_mc_service', '');
 <?php if ($action === 'auto_detect' && $result && !empty($result['detect'])): ?>
 <div class="panel">
   <div class="panel-head"><h3><i data-lucide="search"></i> نتائج الاكتشاف التلقائي</h3></div>
-  <p class="muted small">جرّبنا عدة صيغ شائعة لمصادقة API على نقطة <code dir="ltr">/cards/cards/?limit=1</code>. اختر الصيغة التي رجعت <strong>200</strong> وطبّقها.</p>
+  <p class="muted small">تم تجريب 18 صيغة شائعة على <code dir="ltr">/cards/cards/?limit=1</code>. اختر الصيغة التي رجعت <strong>200</strong>.</p>
   <table class="table">
-    <thead><tr><th>اسم الهيدر</th><th>البادئة</th><th>HTTP</th><th>عيّنة</th><th></th></tr></thead>
+    <thead><tr><th>الصيغة</th><th>HTTP</th><th>عيّنة من الردّ</th><th></th></tr></thead>
     <tbody>
     <?php foreach ($result['detect'] as $att): ?>
       <tr>
-        <td dir="ltr"><?= e($att['header']) ?></td>
-        <td dir="ltr"><?= $att['prefix'] === '' ? '<span class="muted">(بدون بادئة)</span>' : e($att['prefix']) ?></td>
+        <td dir="ltr"><code><?= e($att['label']) ?></code></td>
         <td><span class="badge <?= $att['ok'] ? 'ok' : 'bad' ?>">HTTP <?= (int)$att['status'] ?></span></td>
         <td class="muted small" dir="ltr"><?= e($att['snippet']) ?></td>
         <td>
@@ -153,9 +160,10 @@ $mcSvc   = setting_get($pdo, 'flexcard_mc_service', '');
           <form method="post" class="inline">
             <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
             <input type="hidden" name="action" value="apply_auth">
-            <input type="hidden" name="header" value="<?= e($att['header']) ?>">
-            <input type="hidden" name="prefix" value="<?= e($att['prefix']) ?>">
-            <button class="btn btn-primary sm"><i data-lucide="check"></i> تطبيق هذه الصيغة</button>
+            <input type="hidden" name="mode" value="<?= e($att['mode']) ?>">
+            <input type="hidden" name="key1" value="<?= e($att['key1']) ?>">
+            <input type="hidden" name="key2" value="<?= e($att['key2']) ?>">
+            <button class="btn btn-primary sm"><i data-lucide="check"></i> تطبيق</button>
           </form>
           <?php endif; ?>
         </td>
@@ -168,10 +176,65 @@ $mcSvc   = setting_get($pdo, 'flexcard_mc_service', '');
     foreach ($result['detect'] as $a) { if ($a['ok']) { $any = true; break; } }
     if (!$any):
   ?>
-    <p class="flash flash-bad">لم تنجح أي صيغة. تأكد من أن <strong>API Key</strong> صحيح وفعّال في FlexCard، وأنّ مفتاحك يملك صلاحية على <code dir="ltr">/cards/cards/</code>. إذا كانت كل الردود 403 مع نفس الرسالة فالمفتاح صحيح لكنه يحتاج صلاحية على نقطة الفحص — جرّب نقطة أخرى أو أكّد الصلاحيات في لوحة FlexCard.</p>
+    <p class="flash flash-bad">
+      كل الصيغ رجعت برفض. الاحتمالات: (1) المفتاح خطأ أو ملغى، (2) المفتاح بدون صلاحية على <code dir="ltr">/cards/cards/</code>،
+      (3) FlexCard يستخدم صيغة مخصّصة. افتح <a href="https://flexcard.cards/api/docs/" target="_blank" dir="ltr">صفحة Swagger</a>،
+      اضغط زر <strong>Authorize</strong> وانسخ اسم الـ scheme الظاهر في النافذة، ثم استخدم نموذج <strong>الاختبار المخصّص</strong> أدناه.
+    </p>
   <?php endif; ?>
 </div>
 <?php endif; ?>
+
+<div class="panel">
+  <div class="panel-head"><h3><i data-lucide="terminal-square"></i> اختبار مخصّص</h3></div>
+  <form method="post" class="form">
+    <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+    <input type="hidden" name="action" value="custom_test">
+    <div class="grid-3">
+      <label><span>طريقة المصادقة</span>
+        <select name="mode">
+          <option value="header">Header</option>
+          <option value="query">Query string</option>
+          <option value="basic">HTTP Basic</option>
+        </select>
+      </label>
+      <label><span>اسم الهيدر / اسم المتغير</span>
+        <input dir="ltr" name="key1" value="Authorization" placeholder="Authorization | X-Api-Key | api_key">
+      </label>
+      <label><span>البادئة (للـ header) أو الباسورد (للـ basic)</span>
+        <input dir="ltr" name="key2" value="Api-Key" placeholder="Api-Key | Bearer | Token | (فارغ)">
+      </label>
+    </div>
+    <label><span>المسار (path)</span>
+      <input dir="ltr" name="path" value="/cards/cards/?limit=1">
+    </label>
+    <button class="btn btn-primary"><i data-lucide="play"></i> جرّب الآن</button>
+  </form>
+
+  <?php if ($action === 'custom_test' && !empty($result['custom'])): $r = $result['custom']; $u = $result['used']; ?>
+    <div class="mt-12">
+      <p>
+        <span class="badge <?= $r['ok'] ? 'ok' : 'bad' ?>">HTTP <?= (int)$r['status'] ?></span>
+        المُجَرَّب:
+        <code dir="ltr"><?= e($u['mode']) ?></code> ·
+        <code dir="ltr"><?= e($u['k1']) ?></code> ·
+        <code dir="ltr"><?= $u['k2'] === '' ? '(فارغ)' : e($u['k2']) ?></code> ·
+        <code dir="ltr"><?= e($u['path']) ?></code>
+      </p>
+      <pre class="raw-json"><?= e(json_encode($r['body'] ?? $r['raw'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)) ?></pre>
+      <?php if ($r['ok']): ?>
+        <form method="post" class="inline mt-8">
+          <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+          <input type="hidden" name="action" value="apply_auth">
+          <input type="hidden" name="mode" value="<?= e($u['mode']) ?>">
+          <input type="hidden" name="key1" value="<?= e($u['k1']) ?>">
+          <input type="hidden" name="key2" value="<?= e($u['k2']) ?>">
+          <button class="btn btn-primary"><i data-lucide="check"></i> اعتمد هذه الصيغة</button>
+        </form>
+      <?php endif; ?>
+    </div>
+  <?php endif; ?>
+</div>
 
 <?php if ($action === 'sync_otp' && $result):
     $s = $result['sync'] ?? [];

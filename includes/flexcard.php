@@ -13,6 +13,7 @@ function fc_config(PDO $pdo): array {
     return [
         'base'   => rtrim((string)setting_get($pdo, 'flexcard_base_url', 'https://flexcard.cards/api/v1'), '/'),
         'key'    => trim((string)setting_get($pdo, 'flexcard_api_key', '')),
+        'mode'   => (string)setting_get($pdo, 'flexcard_auth_mode', 'header'),
         'header' => (string)setting_get($pdo, 'flexcard_auth_header', 'Authorization'),
         'prefix' => (string)setting_get($pdo, 'flexcard_auth_prefix', 'Api-Key'),
     ];
@@ -27,12 +28,17 @@ function fc_request(PDO $pdo, string $method, string $path, $body = null): array
         return ['ok' => false, 'status' => 0, 'error' => 'PHP cURL غير مفعّل على الخادم', 'body' => null, 'raw' => null];
     }
     $url = $cfg['base'] . $path;
-    $authValue = trim($cfg['prefix'] . ' ' . $cfg['key']);
-    $headers = [
-        'Accept: application/json',
-        'Content-Type: application/json',
-        $cfg['header'] . ': ' . $authValue,
-    ];
+    $headers = ['Accept: application/json', 'Content-Type: application/json'];
+    $mode = $cfg['mode'] ?? 'header';
+    if ($mode === 'query') {
+        $sep = (strpos($url, '?') !== false) ? '&' : '?';
+        $url .= $sep . urlencode($cfg['header'] ?: 'api_key') . '=' . urlencode($cfg['key']);
+    } elseif ($mode === 'basic') {
+        $headers[] = 'Authorization: Basic ' . base64_encode($cfg['key'] . ':' . ($cfg['prefix'] ?? ''));
+    } else {
+        $authValue = $cfg['prefix'] === '' ? $cfg['key'] : trim($cfg['prefix'] . ' ' . $cfg['key']);
+        $headers[] = ($cfg['header'] ?: 'Authorization') . ': ' . $authValue;
+    }
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -69,21 +75,27 @@ function fc_test(PDO $pdo): array {
 }
 
 /**
- * Try a single combination (header,prefix) against a path.
- * Used by auto-detect; does NOT touch settings.
+ * Try a single attempt with custom header/prefix/query-param/basic.
+ * $mode = 'header' | 'query' | 'basic'
  */
-function fc_request_custom(PDO $pdo, string $header, string $prefix, string $path): array {
+function fc_attempt(PDO $pdo, string $mode, string $key1, string $key2, string $path): array {
     $cfg = fc_config($pdo);
     if ($cfg['key'] === '') {
-        return ['ok' => false, 'status' => 0, 'error' => 'API key غير مضبوط', 'body' => null, 'raw' => null, 'tried' => "$header: $prefix"];
+        return ['ok' => false, 'status' => 0, 'error' => 'API key غير مضبوط', 'body' => null, 'raw' => null];
     }
     $url = $cfg['base'] . $path;
-    $val = $prefix === '' ? $cfg['key'] : trim($prefix . ' ' . $cfg['key']);
-    $headers = [
-        'Accept: application/json',
-        'Content-Type: application/json',
-        $header . ': ' . $val,
-    ];
+    $headers = ['Accept: application/json', 'Content-Type: application/json'];
+
+    if ($mode === 'header') {
+        $val = $key2 === '' ? $cfg['key'] : trim($key2 . ' ' . $cfg['key']);
+        $headers[] = $key1 . ': ' . $val;
+    } elseif ($mode === 'query') {
+        $sep = (strpos($url, '?') !== false) ? '&' : '?';
+        $url .= $sep . urlencode($key1) . '=' . urlencode($cfg['key']);
+    } elseif ($mode === 'basic') {
+        $headers[] = 'Authorization: Basic ' . base64_encode($cfg['key'] . ':' . $key1);
+    }
+
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
@@ -107,33 +119,46 @@ function fc_request_custom(PDO $pdo, string $header, string $prefix, string $pat
         'error'  => $err ?: null,
         'body'   => $json,
         'raw'    => $resp ?: null,
-        'tried'  => $header . ': ' . ($prefix !== '' ? $prefix . ' &lt;key&gt;' : '&lt;key&gt;'),
     ];
 }
 
 /**
- * Try common auth schemes for FlexCard / DRF backends.
- * Returns array of attempts; each item: ['header','prefix','status','ok','snippet'].
+ * Probe a wide range of auth schemes used by API gateways / DRF / Swagger.
+ * Returns rows: [label, mode, key1, key2, status, ok, snippet]
  */
 function fc_auto_detect(PDO $pdo, string $path = '/cards/cards/?limit=1'): array {
-    $combos = [
-        ['Authorization', 'Api-Key'],
-        ['Authorization', 'Bearer'],
-        ['Authorization', 'Token'],
-        ['Authorization', ''],
-        ['X-Api-Key',     ''],
-        ['Api-Key',       ''],
+    $attempts = [
+        ['Authorization: Api-Key <key>',   'header', 'Authorization', 'Api-Key'],
+        ['Authorization: ApiKey <key>',    'header', 'Authorization', 'ApiKey'],
+        ['Authorization: api-key <key>',   'header', 'Authorization', 'api-key'],
+        ['Authorization: Bearer <key>',    'header', 'Authorization', 'Bearer'],
+        ['Authorization: Token <key>',     'header', 'Authorization', 'Token'],
+        ['Authorization: token <key>',     'header', 'Authorization', 'token'],
+        ['Authorization: <key>',           'header', 'Authorization', ''],
+        ['X-Api-Key: <key>',               'header', 'X-Api-Key',     ''],
+        ['X-API-KEY: <key>',               'header', 'X-API-KEY',     ''],
+        ['Api-Key: <key>',                 'header', 'Api-Key',       ''],
+        ['ApiKey: <key>',                  'header', 'ApiKey',        ''],
+        ['Api-Token: <key>',               'header', 'Api-Token',     ''],
+        ['X-Auth-Token: <key>',            'header', 'X-Auth-Token',  ''],
+        ['?api_key=<key>',                 'query',  'api_key',       ''],
+        ['?apikey=<key>',                  'query',  'apikey',        ''],
+        ['?key=<key>',                     'query',  'key',           ''],
+        ['?token=<key>',                   'query',  'token',         ''],
+        ['Basic base64(<key>:)',           'basic',  '',              ''],
     ];
     $out = [];
-    foreach ($combos as [$h, $p]) {
-        $r = fc_request_custom($pdo, $h, $p, $path);
-        $snippet = is_string($r['raw']) ? mb_substr($r['raw'], 0, 160) : '';
+    foreach ($attempts as [$label, $mode, $k1, $k2]) {
+        $r = fc_attempt($pdo, $mode, $k1, $k2, $path);
+        $snip = is_string($r['raw']) ? mb_substr($r['raw'], 0, 200) : '';
         $out[] = [
-            'header'   => $h,
-            'prefix'   => $p,
-            'status'   => $r['status'],
-            'ok'       => $r['ok'],
-            'snippet'  => $snippet,
+            'label'   => $label,
+            'mode'    => $mode,
+            'key1'    => $k1,
+            'key2'    => $k2,
+            'status'  => $r['status'],
+            'ok'      => $r['ok'],
+            'snippet' => $snip,
         ];
         if ($r['ok']) break;
     }

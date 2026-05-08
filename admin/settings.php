@@ -6,7 +6,7 @@ require __DIR__ . '/_layout.php';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $keys = ['site_name','hero_title','hero_subtitle','hero_pitch','currency','issuance_fee','charge_fee_percent','min_initial_charge','min_wallet_deposit',
-             'flexcard_enabled','flexcard_base_url','flexcard_api_key','flexcard_auth_header','flexcard_auth_prefix','flexcard_visa_service','flexcard_mc_service'];
+             'flexcard_enabled','flexcard_base_url','flexcard_api_key','flexcard_auth_mode','flexcard_auth_header','flexcard_auth_prefix','flexcard_visa_service','flexcard_mc_service'];
     foreach ($keys as $k) {
         if ($k === 'flexcard_enabled') {
             setting_set($pdo, $k, isset($_POST[$k]) ? '1' : '0');
@@ -44,8 +44,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="grid-2">
       <label><span>Base URL</span><input dir="ltr" name="flexcard_base_url" value="<?= e(setting_get($pdo,'flexcard_base_url')) ?>"></label>
       <label><span>API Key</span><input dir="ltr" name="flexcard_api_key" value="<?= e(setting_get($pdo,'flexcard_api_key')) ?>"></label>
-      <label><span>Auth header name</span><input dir="ltr" name="flexcard_auth_header" value="<?= e(setting_get($pdo,'flexcard_auth_header')) ?>"></label>
-      <label><span>Auth header prefix</span><input dir="ltr" name="flexcard_auth_prefix" value="<?= e(setting_get($pdo,'flexcard_auth_prefix')) ?>" placeholder="مثل: Api-Key أو Bearer"></label>
+      <label><span>Auth mode</span>
+        <?php $am = setting_get($pdo,'flexcard_auth_mode','header'); ?>
+        <select name="flexcard_auth_mode">
+          <option value="header" <?= $am==='header'?'selected':'' ?>>Header</option>
+          <option value="query"  <?= $am==='query' ?'selected':'' ?>>Query string</option>
+          <option value="basic"  <?= $am==='basic' ?'selected':'' ?>>HTTP Basic</option>
+        </select>
+      </label>
+      <label><span>Auth header / param name</span><input dir="ltr" name="flexcard_auth_header" value="<?= e(setting_get($pdo,'flexcard_auth_header')) ?>"></label>
+      <label><span>Auth prefix / basic password</span><input dir="ltr" name="flexcard_auth_prefix" value="<?= e(setting_get($pdo,'flexcard_auth_prefix')) ?>" placeholder="مثل: Api-Key أو Bearer أو فارغ"></label>
       <label><span>Visa Service ID</span><input dir="ltr" name="flexcard_visa_service" value="<?= e(setting_get($pdo,'flexcard_visa_service')) ?>"></label>
       <label><span>Mastercard Service ID</span><input dir="ltr" name="flexcard_mc_service" value="<?= e(setting_get($pdo,'flexcard_mc_service')) ?>"></label>
     </div>
