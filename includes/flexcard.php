@@ -65,7 +65,79 @@ function fc_request(PDO $pdo, string $method, string $path, $body = null): array
 }
 
 function fc_test(PDO $pdo): array {
-    return fc_request($pdo, 'GET', '/users/profiles/?limit=1');
+    return fc_request($pdo, 'GET', '/cards/cards/?limit=1');
+}
+
+/**
+ * Try a single combination (header,prefix) against a path.
+ * Used by auto-detect; does NOT touch settings.
+ */
+function fc_request_custom(PDO $pdo, string $header, string $prefix, string $path): array {
+    $cfg = fc_config($pdo);
+    if ($cfg['key'] === '') {
+        return ['ok' => false, 'status' => 0, 'error' => 'API key غير مضبوط', 'body' => null, 'raw' => null, 'tried' => "$header: $prefix"];
+    }
+    $url = $cfg['base'] . $path;
+    $val = $prefix === '' ? $cfg['key'] : trim($prefix . ' ' . $cfg['key']);
+    $headers = [
+        'Accept: application/json',
+        'Content-Type: application/json',
+        $header . ': ' . $val,
+    ];
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 20,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
+    $resp = curl_exec($ch);
+    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err  = curl_error($ch);
+    curl_close($ch);
+    $json = null;
+    if ($resp !== false && $resp !== '') {
+        $d = json_decode($resp, true);
+        if (json_last_error() === JSON_ERROR_NONE) $json = $d;
+    }
+    return [
+        'ok'     => $http >= 200 && $http < 300,
+        'status' => $http,
+        'error'  => $err ?: null,
+        'body'   => $json,
+        'raw'    => $resp ?: null,
+        'tried'  => $header . ': ' . ($prefix !== '' ? $prefix . ' &lt;key&gt;' : '&lt;key&gt;'),
+    ];
+}
+
+/**
+ * Try common auth schemes for FlexCard / DRF backends.
+ * Returns array of attempts; each item: ['header','prefix','status','ok','snippet'].
+ */
+function fc_auto_detect(PDO $pdo, string $path = '/cards/cards/?limit=1'): array {
+    $combos = [
+        ['Authorization', 'Api-Key'],
+        ['Authorization', 'Bearer'],
+        ['Authorization', 'Token'],
+        ['Authorization', ''],
+        ['X-Api-Key',     ''],
+        ['Api-Key',       ''],
+    ];
+    $out = [];
+    foreach ($combos as [$h, $p]) {
+        $r = fc_request_custom($pdo, $h, $p, $path);
+        $snippet = is_string($r['raw']) ? mb_substr($r['raw'], 0, 160) : '';
+        $out[] = [
+            'header'   => $h,
+            'prefix'   => $p,
+            'status'   => $r['status'],
+            'ok'       => $r['ok'],
+            'snippet'  => $snippet,
+        ];
+        if ($r['ok']) break;
+    }
+    return $out;
 }
 function fc_list_services(PDO $pdo, int $limit = 100): array {
     return fc_request($pdo, 'GET', '/finance/services/?limit=' . $limit);

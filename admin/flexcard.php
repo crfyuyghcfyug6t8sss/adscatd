@@ -16,6 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = fc_list_wallets($pdo);
     } elseif ($action === 'sync_otp') {
         $result = ['ok' => true, 'sync' => fc_sync_otps($pdo)];
+    } elseif ($action === 'auto_detect') {
+        $result = ['detect' => fc_auto_detect($pdo)];
+    } elseif ($action === 'apply_auth') {
+        setting_set($pdo, 'flexcard_auth_header', (string)$_POST['header']);
+        setting_set($pdo, 'flexcard_auth_prefix', (string)$_POST['prefix']);
+        flash_set('ok', 'تم تطبيق صيغة المصادقة.');
+        redirect('/admin/flexcard.php');
     } elseif ($action === 'pick_visa') {
         setting_set($pdo, 'flexcard_visa_service', (string)($_POST['service_id'] ?? ''));
         flash_set('ok', 'تم ضبط خدمة Visa.');
@@ -53,6 +60,10 @@ $mcSvc   = setting_get($pdo, 'flexcard_mc_service', '');
     <form method="post" class="inline">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
       <button name="action" value="test" class="btn btn-outline sm"><i data-lucide="plug"></i> اختبار الاتصال</button>
+    </form>
+    <form method="post" class="inline">
+      <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+      <button name="action" value="auto_detect" class="btn btn-primary sm"><i data-lucide="search"></i> اكتشاف تلقائي للمصادقة</button>
     </form>
     <form method="post" class="inline">
       <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
@@ -121,6 +132,44 @@ $mcSvc   = setting_get($pdo, 'flexcard_mc_service', '');
     <?php endforeach; ?>
     </tbody>
   </table>
+</div>
+<?php endif; ?>
+
+<?php if ($action === 'auto_detect' && $result && !empty($result['detect'])): ?>
+<div class="panel">
+  <div class="panel-head"><h3><i data-lucide="search"></i> نتائج الاكتشاف التلقائي</h3></div>
+  <p class="muted small">جرّبنا عدة صيغ شائعة لمصادقة API على نقطة <code dir="ltr">/cards/cards/?limit=1</code>. اختر الصيغة التي رجعت <strong>200</strong> وطبّقها.</p>
+  <table class="table">
+    <thead><tr><th>اسم الهيدر</th><th>البادئة</th><th>HTTP</th><th>عيّنة</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach ($result['detect'] as $att): ?>
+      <tr>
+        <td dir="ltr"><?= e($att['header']) ?></td>
+        <td dir="ltr"><?= $att['prefix'] === '' ? '<span class="muted">(بدون بادئة)</span>' : e($att['prefix']) ?></td>
+        <td><span class="badge <?= $att['ok'] ? 'ok' : 'bad' ?>">HTTP <?= (int)$att['status'] ?></span></td>
+        <td class="muted small" dir="ltr"><?= e($att['snippet']) ?></td>
+        <td>
+          <?php if ($att['ok']): ?>
+          <form method="post" class="inline">
+            <input type="hidden" name="csrf" value="<?= e(csrf_token()) ?>">
+            <input type="hidden" name="action" value="apply_auth">
+            <input type="hidden" name="header" value="<?= e($att['header']) ?>">
+            <input type="hidden" name="prefix" value="<?= e($att['prefix']) ?>">
+            <button class="btn btn-primary sm"><i data-lucide="check"></i> تطبيق هذه الصيغة</button>
+          </form>
+          <?php endif; ?>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <?php
+    $any = false;
+    foreach ($result['detect'] as $a) { if ($a['ok']) { $any = true; break; } }
+    if (!$any):
+  ?>
+    <p class="flash flash-bad">لم تنجح أي صيغة. تأكد من أن <strong>API Key</strong> صحيح وفعّال في FlexCard، وأنّ مفتاحك يملك صلاحية على <code dir="ltr">/cards/cards/</code>. إذا كانت كل الردود 403 مع نفس الرسالة فالمفتاح صحيح لكنه يحتاج صلاحية على نقطة الفحص — جرّب نقطة أخرى أو أكّد الصلاحيات في لوحة FlexCard.</p>
+  <?php endif; ?>
 </div>
 <?php endif; ?>
 
